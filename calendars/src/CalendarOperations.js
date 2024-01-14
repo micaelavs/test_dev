@@ -1,10 +1,13 @@
 const moment = require('moment');
 
 class CalendarOperations {
+
   constructor(calendarData) {
     this.data = calendarData;
   }
-
+  //Gestion y disponibilidad de horarios en un calendario
+  // realiza operaciones específicas relacionadas con la disponibilidad de horarios en un calendario
+  //que determina y devuelve lugares disponibles para una fecha y duración específica
   getAvailableSpots(date, duration) {
     const dateISO = moment(date, 'DD-MM-YYYY').format('YYYY-MM-DD');
     const durationBefore = this.data.durationBefore;
