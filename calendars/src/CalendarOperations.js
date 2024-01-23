@@ -2,109 +2,96 @@ const moment = require('moment');
 
 class CalendarOperations {
 
-  constructor(calendarData) {
-    this.data = calendarData;
-  }
-  //Gestion y disponibilidad de horarios en un calendario
-  // realiza operaciones específicas relacionadas con la disponibilidad de horarios en un calendario
-  //que determina y devuelve lugares disponibles para una fecha y duración específica
-  getAvailableSpots(date, duration) {
-    const dateISO = moment(date, 'DD-MM-YYYY').format('YYYY-MM-DD');
-    const durationBefore = this.data.durationBefore;
-    const durationAfter = this.data.durationAfter;
+    constructor(calendarData) {
+        this.data = calendarData;
+    }
+    //Gestion y disponibilidad de horarios en un calendario
+    //realiza operaciones específicas relacionadas con la disponibilidad de horarios en un calendario
+    //que determina y devuelve lugares disponibles para una fecha y duración específica
+    //duración específica: período de tiempo durante el cual se busca determinar la disponibilidad de lugares en el calendario
+    getAvailableSpots(date, duration) {
+        //toma una fecha y una duracion especifica y realiza una serie de pasos para determinar y devolver lugares disponibles para esa fecha y  duracion
+        const dateISO = moment(date, 'DD-MM-YYYY').format('YYYY-MM-DD');
+        const durationBefore = this.data.durationBefore;
+        const durationAfter = this.data.durationAfter;
 
-    let daySlots = [];
-    for (const key in this.data.slots) {
-      if (key === date) {
-        daySlots = this.data.slots[key];
-      }
+        const daySlots = this.getSlotsForDate(date);
+
+        const realSpots = this.filterAvailableSlots(date, daySlots, duration);
+
+        const arrSlot = this.generateTimeSlots(dateISO, realSpots, durationBefore, duration, durationAfter);
+
+        return arrSlot;
+    } 
+    //obtiene los espacios disponibles para una fecha dada, utiliza iso de moment
+    getSlotsForDate(date) {
+        return this.data.slots[date] || [];
+    }
+    //filtra espacios disponibles para la fecha dada, eliminando aquellas que tienen conflictos con las sesiones existentes.
+    filterAvailableSlots(date, daySlots, duration) {
+        return daySlots.filter(daySlot => {
+        if (this.hasConflicts(date, daySlot)) {
+            return false;
+        }
+        return true;
+        });
+    }
+    //vrifica si un espacio disponible especifico en un día dado tiene conflictos con las sesiones existentes programadas para esa fecha en el calendario
+    hasConflicts(date, daySlot) {
+        if (this.data.sessions && this.data.sessions[date]) {
+            return this.data.sessions[date].some(sessionSlot => {
+                const slotStart = moment(date + ' ' + daySlot.start).valueOf();
+                const slotEnd = moment(date + ' ' + daySlot.end).valueOf();
+                const sessionStart = moment(date + ' ' + sessionSlot.start).valueOf();
+                const sessionEnd = moment(date + ' ' + sessionSlot.end).valueOf();
+
+                return (sessionStart < slotEnd && sessionEnd > slotStart);
+            });
+        }
+        return false;
+    }
+   //genera los espacios de tiempo reales sin conflictos, aplicando los periodos antes y despues de la duracion específica.
+    generateTimeSlots(dateISO, realSpots, durationBefore, duration, durationAfter) {
+        const arrSlot = [];
+
+        realSpots.forEach(daySlot => {
+        const resultSlot = this.getOneMiniSlot(dateISO, daySlot, durationBefore, duration, durationAfter);
+        if (resultSlot) {
+            arrSlot.push(resultSlot);
+        }
+        });
+
+        return arrSlot;
+    }
+    //Dado un espacio específico en un dia, genera un espacio mas chico dentro el
+    //aplicando los periodos antes y despues de la duracion especifica. 
+    //Utiliza un bucle while para generar múltiples ranuras si es necesario.
+    getOneMiniSlot(dateISO, daySlot, durationBefore, duration, durationAfter) {
+        let startHour = moment(dateISO + ' ' + daySlot.start).valueOf();
+        let endHour = moment(dateISO + ' ' + daySlot.end).valueOf();
+        let init = 0;
+
+        const arrSlot = [];
+
+        while (startHour + (durationBefore + duration + durationAfter) * 60000 <= endHour) {
+        const clientStartHour = startHour + durationBefore * 60000;
+        const clientEndHour = clientStartHour + duration * 60000;
+        const slot = {
+            startHour: new Date(startHour),
+            endHour: new Date(startHour + (durationBefore + duration + durationAfter) * 60000),
+            clientStartHour: new Date(clientStartHour),
+            clientEndHour: new Date(clientEndHour),
+        };
+
+        arrSlot.push(slot);
+
+        startHour = startHour + duration * 60000;
+        init += 1;
+        }
+
+        return arrSlot;
     }
 
-    const realSpots = [];
-    daySlots.forEach(daySlot => {
-      if (this.data.sessions && this.data.sessions[date]) {
-        let noConflicts = true;
-        this.data.sessions[date].forEach(sessionSlot => {
-          let sessionStart = moment(dateISO + ' ' + sessionSlot.start).valueOf();
-          let sessionEnd = moment(dateISO + ' ' + sessionSlot.end).valueOf();
-          let start = moment(dateISO + ' ' + daySlot.start).valueOf();
-          let end = moment(dateISO + ' ' + daySlot.end).valueOf();
-
-          if (sessionStart > start && sessionEnd < end) {
-            realSpots.push({ start: daySlot.start, end: sessionSlot.start });
-            realSpots.push({ start: sessionSlot.end, end: daySlot.end });
-            noConflicts = false;
-          } else if (sessionStart === start && sessionEnd < end) {
-            realSpots.push({ start: sessionSlot.end, end: daySlot.end });
-            noConflicts = false;
-          } else if (sessionStart > start && sessionEnd === end) {
-            realSpots.push({ start: daySlot.start, end: sessionSlot.start });
-            noConflicts = false;
-          } else if (sessionStart === start && sessionEnd === end) {
-            noConflicts = false;
-          }
-        });
-        if (noConflicts) {
-          realSpots.push(daySlot);
-        }
-      } else {
-        realSpots.push(daySlot);
-      }
-    });
-
-    let arrSlot = [];
-    realSpots.forEach(function (slot) {
-      let init = 0;
-      let startHour;
-      let endHour;
-      let clientStartHour;
-      let clientEndHour;
-
-      function getMomentHour(hour) {
-        let finalHourForAdd = moment(dateISO + ' ' + hour);
-        return finalHourForAdd;
-      }
-
-      function addMinutes(hour, minutes) {
-        let result = moment(hour).add(minutes, 'minutes').format('HH:mm');
-        return result;
-      }
-
-      function getOneMiniSlot(startSlot, endSlot) {
-        let startHourFirst = getMomentHour(startSlot);
-        startHour = startHourFirst.format('HH:mm');
-        endHour = addMinutes(startHourFirst, durationBefore + duration + durationAfter);
-        clientStartHour = addMinutes(startHourFirst, durationBefore);
-        clientEndHour = addMinutes(startHourFirst, duration);
-
-        if (moment.utc(endHour, 'HH:mm').valueOf() > moment.utc(endSlot, 'HH:mm').valueOf()) {
-          return null;
-        }
-        const objSlot = {
-          startHour: moment.utc(dateISO + ' ' + startHour).toDate(),
-          endHour: moment.utc(dateISO + ' ' + endHour).toDate(),
-          clientStartHour: moment.utc(dateISO + ' ' + clientStartHour).toDate(),
-          clientEndHour: moment.utc(dateISO + ' ' + clientEndHour).toDate(),
-        };
-        init += 1;
-        return objSlot;
-      }
-
-      let start = slot.start;
-      let resultSlot;
-      do {
-        resultSlot = getOneMiniSlot(start, slot.end);
-        if (resultSlot) {
-          arrSlot.push(resultSlot);
-          start = moment.utc(resultSlot.endHour).format('HH:mm');
-        }
-      } while (resultSlot);
-
-      return arrSlot;
-    });
-
-    return arrSlot;
-  }
 }
 
 module.exports = CalendarOperations;
